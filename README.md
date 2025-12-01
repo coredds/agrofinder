@@ -433,5 +433,3 @@ Para dúvidas ou problemas, abra uma issue no GitHub ou entre em contato.
 
 **AgroFinder v1.0** - Powered by OpenAI & Pinecone 🚀
 
-Deploy atual: https://agrofinder-[PROJECT_ID].run.app (após deploy)
-
