@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  agrofinder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agrofinder
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./chroma_db:/app/chroma_db
+      - ./backend:/app/backend
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      - GCS_PROJECT_ID=${GCS_PROJECT_ID}
+      - CHROMA_DB_PATH=/app/chroma_db
+      - ENVIRONMENT=development
+      - LOG_LEVEL=INFO
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
