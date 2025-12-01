@@ -1,10 +1,11 @@
 """
 Cliente OpenAI para embeddings e chat
 """
-from openai import OpenAI
+from openai import AsyncOpenAI
 from typing import List
 import logging
 from backend.config import settings
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,12 @@ class OpenAIClient:
     """Cliente para interação com OpenAI API"""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        # Usar AsyncOpenAI com timeout maior
+        self.client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            timeout=httpx.Timeout(120.0, connect=30.0),  # 120s total, 30s para conectar
+            max_retries=3
+        )
         self.embedding_model = settings.openai_embedding_model
         self.chat_model = settings.openai_chat_model
     
@@ -29,10 +35,9 @@ class OpenAIClient:
         """
         try:
             logger.info(f"🤖 Chamando OpenAI API para embedding ({len(text)} caracteres)...")
-            response = self.client.embeddings.create(
+            response = await self.client.embeddings.create(
                 model=self.embedding_model,
-                input=text,
-                timeout=60  # Timeout de 60s para OpenAI
+                input=text
             )
             logger.info(f"✅ Embedding recebido da OpenAI")
             return response.data[0].embedding
@@ -51,13 +56,15 @@ class OpenAIClient:
             Lista de embeddings
         """
         try:
-            response = self.client.embeddings.create(
+            logger.info(f"🤖 Criando embeddings para {len(texts)} textos...")
+            response = await self.client.embeddings.create(
                 model=self.embedding_model,
                 input=texts
             )
+            logger.info(f"✅ {len(response.data)} embeddings recebidos da OpenAI")
             return [item.embedding for item in response.data]
         except Exception as e:
-            logger.error(f"Erro ao criar embeddings em batch: {e}")
+            logger.error(f"❌ Erro ao criar embeddings em batch: {e}")
             raise
     
     async def rerank_results(self, query: str, results: List[str]) -> List[int]:

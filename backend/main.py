@@ -16,8 +16,8 @@ from backend.models.schemas import (
     IngestRequest, IngestResponse,
     UploadResponse, HealthResponse
 )
-from backend.services.search import search_service
-from backend.services.ingestion import ingestion_service
+from backend.services.search_pinecone import search_service_pinecone
+from backend.services.ingestion_pinecone import ingestion_service_pinecone
 from backend.services.gcs_client import gcs_client
 
 # Configurar logging
@@ -38,9 +38,9 @@ app = FastAPI(
 async def startup_event():
     """Evento executado na inicialização"""
     logger.info("🚀 Iniciando AgroFinder API...")
-    logger.info(f"📁 ChromaDB path: {settings.chroma_db_path}")
+    logger.info(f"📊 Pinecone Index: {settings.pinecone_index_name}")
     logger.info(f"🌍 Environment: {settings.environment}")
-    # Não inicializar ChromaDB aqui - será feito lazy no primeiro uso
+    # Pinecone será inicializado lazy no primeiro uso
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -59,25 +59,65 @@ app.add_middleware(
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint - versão rápida sem acessar ChromaDB"""
+    """Health check endpoint - versão rápida"""
     return HealthResponse(
         status="healthy",
         environment=settings.environment,
-        chromadb_status="ready",
-        total_documents=0,  # Não consultar ChromaDB aqui
+        chromadb_status="pinecone",  # Agora usando Pinecone
+        total_documents=0,  # Não consultar Pinecone aqui (pode ser lento)
         timestamp=datetime.now()
     )
+
+@app.get("/api/debug")
+async def debug_connections():
+    """Endpoint de diagnóstico para verificar conectividade"""
+    import os
+    import socket
+    
+    diagnostics = {
+        "timestamp": datetime.now().isoformat(),
+        "environment": settings.environment,
+        "checks": {}
+    }
+    
+    # Check OpenAI API key
+    api_key = settings.openai_api_key
+    diagnostics["checks"]["openai_key_length"] = len(api_key) if api_key else 0
+    diagnostics["checks"]["openai_key_starts_with"] = api_key[:10] if api_key else "NONE"
+    
+    # Check Pinecone
+    diagnostics["checks"]["pinecone_key_length"] = len(settings.pinecone_api_key) if settings.pinecone_api_key else 0
+    diagnostics["checks"]["pinecone_environment"] = settings.pinecone_environment
+    
+    # Test DNS resolution
+    try:
+        socket.gethostbyname("api.openai.com")
+        diagnostics["checks"]["dns_openai"] = "OK"
+    except Exception as e:
+        diagnostics["checks"]["dns_openai"] = f"FAIL: {str(e)}"
+    
+    # Test OpenAI connection
+    try:
+        from backend.services.openai_client import openai_client
+        test_embedding = await openai_client.create_embedding("test")
+        diagnostics["checks"]["openai_connection"] = "OK"
+        diagnostics["checks"]["embedding_dimension"] = len(test_embedding)
+    except Exception as e:
+        diagnostics["checks"]["openai_connection"] = f"FAIL: {str(e)}"
+    
+    return diagnostics
 
 @app.get("/api/stats")
 async def get_stats():
     """Retorna estatísticas detalhadas do sistema"""
     try:
-        # Aqui sim, consultamos o ChromaDB
-        doc_count = search_service.get_document_count()
+        # Consultamos o Pinecone
+        stats = ingestion_service_pinecone.get_index_stats()
         return {
             "success": True,
-            "total_documents": doc_count,
-            "chromadb_status": "healthy",
+            "total_vectors": stats.get("total_vectors", 0),
+            "vector_db": "pinecone",
+            "index_name": settings.pinecone_index_name,
             "environment": settings.environment,
             "timestamp": datetime.now().isoformat()
         }
@@ -101,8 +141,8 @@ async def search(request: SearchRequest):
     start_time = time.time()
     
     try:
-        # Realizar busca
-        results = await search_service.search(
+        # Realizar busca usando Pinecone
+        results = await search_service_pinecone.search(
             query=request.query,
             top_k=request.top_k or 10,
             category=request.category,
@@ -142,8 +182,8 @@ async def ingest_pdf(request: IngestRequest):
                 detail=f"Arquivo não encontrado no GCS: {request.gcs_path}"
             )
         
-        # Processar e indexar PDF
-        document_id, num_chunks = await ingestion_service.ingest_pdf(
+        # Processar e indexar PDF no Pinecone
+        document_id, num_chunks = await ingestion_service_pinecone.ingest_pdf(
             gcs_path=request.gcs_path,
             category=request.category,
             metadata=request.metadata
@@ -204,9 +244,9 @@ async def upload_pdf(
         
         logger.info(f"✅ Arquivo enviado para GCS: {gcs_path}")
         
-        # Indexar automaticamente no ChromaDB
-        logger.info(f"🔄 Iniciando indexação automática...")
-        document_id, num_chunks = await ingestion_service.ingest_pdf(
+        # Indexar automaticamente no Pinecone
+        logger.info(f"🔄 Iniciando indexação automática no Pinecone...")
+        document_id, num_chunks = await ingestion_service_pinecone.ingest_pdf(
             gcs_path=gcs_path,
             category=doc_category,
             metadata={"indexed_by": "web_upload", "upload_timestamp": timestamp}

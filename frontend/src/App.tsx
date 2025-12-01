@@ -161,7 +161,7 @@ function App() {
       <footer className="mt-auto bg-gradient-to-r from-primary-700 via-primary-600 to-primary-700 border-t border-primary-800">
         <div className="max-w-7xl mx-auto px-4 py-3 text-center">
           <p className="text-xs text-primary-100">
-            AgroFinder v1.0 · Powered by OpenAI & ChromaDB
+            AgroFinder v1.0 · Powered by OpenAI & Pinecone · Deployed on Google Cloud Run
           </p>
         </div>
       </footer>

@@ -1,5 +1,5 @@
 """
-Script para indexar todos os PDFs do bucket GCS automaticamente
+Script para indexar todos os PDFs do bucket GCS no Pinecone
 """
 import asyncio
 import sys
@@ -9,7 +9,8 @@ from typing import List, Dict
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from google.cloud import storage
-from backend.services.ingestion import ingestion_service
+from backend.services.ingestion_pinecone import ingestion_service_pinecone
+from backend.services.pinecone_client import pinecone_client
 from backend.models.schemas import DocumentCategory
 from backend.config import settings
 
@@ -35,6 +36,10 @@ def list_all_pdfs() -> Dict[str, List[str]]:
                 pdfs["anuncios"].append(blob.name)
             elif blob.name.startswith('organico/'):
                 pdfs["organico"].append(blob.name)
+            elif blob.name.startswith('pdfs/anuncio/'):
+                pdfs["anuncios"].append(blob.name)
+            elif blob.name.startswith('pdfs/organico/'):
+                pdfs["organico"].append(blob.name)
             else:
                 pdfs["outros"].append(blob.name)
     
@@ -42,12 +47,24 @@ def list_all_pdfs() -> Dict[str, List[str]]:
 
 
 async def index_all():
-    """Indexa todos os PDFs do bucket"""
+    """Indexa todos os PDFs do bucket no Pinecone"""
     
     print("=" * 80)
-    print("🌾 AgroFinder - Indexação em Massa")
+    print("🌾 AgroFinder - Indexação em Massa para Pinecone")
     print("=" * 80)
     print()
+    
+    # Verificar conexão Pinecone
+    print("🔍 Verificando conexão com Pinecone...")
+    try:
+        stats = pinecone_client.get_index_stats()
+        print(f"✅ Conectado ao Pinecone")
+        print(f"   Index: {settings.pinecone_index_name}")
+        print(f"   Vetores atuais: {stats.get('total_vectors', 0):,}")
+    except Exception as e:
+        print(f"❌ Erro ao conectar no Pinecone: {e}")
+        print(f"   Verifique se PINECONE_API_KEY está configurada no .env")
+        return
     
     # Listar PDFs
     pdfs = list_all_pdfs()
@@ -68,7 +85,8 @@ async def index_all():
         return
     
     # Confirmar
-    print("🚀 Iniciando indexação...")
+    print("🚀 Iniciando indexação no Pinecone...")
+    print("   (Isso pode levar alguns minutos dependendo da quantidade de PDFs)")
     print()
     
     success_count = 0
@@ -86,10 +104,10 @@ async def index_all():
             print(f"[{i}/{len(pdfs['anuncios'])}] 📄 {filename}")
             
             try:
-                document_id, num_chunks = await ingestion_service.ingest_pdf(
+                document_id, num_chunks = await ingestion_service_pinecone.ingest_pdf(
                     gcs_path=pdf_path,
                     category=DocumentCategory.ANUNCIO,
-                    metadata={"indexed_by": "batch_script"}
+                    metadata={"indexed_by": "batch_script_pinecone", "source": "reindex"}
                 )
                 
                 print(f"   ✅ Sucesso! {num_chunks} chunks criados")
@@ -113,10 +131,10 @@ async def index_all():
             print(f"[{i}/{len(pdfs['organico'])}] 📄 {filename}")
             
             try:
-                document_id, num_chunks = await ingestion_service.ingest_pdf(
+                document_id, num_chunks = await ingestion_service_pinecone.ingest_pdf(
                     gcs_path=pdf_path,
                     category=DocumentCategory.ORGANICO,
-                    metadata={"indexed_by": "batch_script"}
+                    metadata={"indexed_by": "batch_script_pinecone", "source": "reindex"}
                 )
                 
                 print(f"   ✅ Sucesso! {num_chunks} chunks criados")
@@ -136,20 +154,25 @@ async def index_all():
     print("=" * 80)
     print(f"✅ Sucessos: {success_count}/{total_pdfs}")
     print(f"❌ Erros: {error_count}/{total_pdfs}")
-    print(f"📊 Total de chunks criados: {total_chunks}")
+    print(f"📊 Total de chunks criados: {total_chunks:,}")
     print()
     
-    # Estatísticas da collection
-    stats = ingestion_service.get_collection_stats()
-    print("📚 Estatísticas do ChromaDB:")
-    print(f"   Total de chunks na base: {stats['total_chunks']}")
-    print(f"   Collection: {stats['collection_name']}")
+    # Estatísticas finais do Pinecone
+    try:
+        final_stats = pinecone_client.get_index_stats()
+        print("📚 Estatísticas do Pinecone:")
+        print(f"   Total de vetores no index: {final_stats.get('total_vectors', 0):,}")
+        print(f"   Index: {settings.pinecone_index_name}")
+        print(f"   Dashboard: https://app.pinecone.io/")
+    except Exception as e:
+        print(f"⚠️  Não foi possível obter estatísticas finais: {e}")
+    
     print()
     print("=" * 80)
     print()
     
     if success_count == total_pdfs:
-        print("🎉 Todos os documentos foram indexados com sucesso!")
+        print("🎉 Todos os documentos foram indexados com sucesso no Pinecone!")
     elif success_count > 0:
         print(f"⚠️  {success_count} documentos indexados, {error_count} com erro")
     else:
@@ -157,7 +180,9 @@ async def index_all():
     
     print()
     print("🚀 Sistema pronto para uso!")
-    print("   Acesse: http://localhost:3000")
+    print("   Frontend local: http://localhost:3000")
+    print("   Backend local: http://localhost:8000")
+    print("   Ou faça deploy: .\\deploy_cloudrun.ps1")
     print()
 
 

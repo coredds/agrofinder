@@ -25,10 +25,13 @@ wheels/
 
 # Environment variables
 .env
-.env.local
+.env.*
+!env.example
 
-# ChromaDB
+# Vector Databases (local only)
 chroma_db/
+*.db
+*.sqlite3
 
 # IDEs
 .vscode/

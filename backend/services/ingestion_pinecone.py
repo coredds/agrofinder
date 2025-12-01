@@ -1,5 +1,5 @@
 """
-Serviço de ingestão de documentos PDF
+Serviço de ingestão de documentos PDF usando Pinecone
 """
 import pdfplumber
 import logging
@@ -7,50 +7,18 @@ from typing import List, Dict, Tuple
 from io import BytesIO
 from datetime import datetime
 import hashlib
-import chromadb
-from chromadb.config import Settings as ChromaSettings
 
 from backend.config import settings
 from backend.services.openai_client import openai_client
 from backend.services.gcs_client import gcs_client
+from backend.services.pinecone_client import pinecone_client
 from backend.models.schemas import DocumentCategory
 
 logger = logging.getLogger(__name__)
 
 
-class IngestionService:
-    """Serviço para processamento e ingestão de PDFs"""
-    
-    def __init__(self):
-        self._chroma_client = None
-        self._collection = None
-    
-    @property
-    def chroma_client(self):
-        """Lazy loading do cliente ChromaDB"""
-        if self._chroma_client is None:
-            logger.info("Inicializando ChromaDB client para ingestão...")
-            self._chroma_client = chromadb.PersistentClient(
-                path=settings.chroma_db_path,
-                settings=ChromaSettings(
-                    anonymized_telemetry=False,
-                    allow_reset=False,
-                    # Otimizações
-                    chroma_api_impl="chromadb.api.segment.SegmentAPI",
-                    chroma_sysdb_impl="chromadb.db.impl.sqlite.SqliteDB",
-                )
-            )
-        return self._chroma_client
-    
-    @property
-    def collection(self):
-        """Lazy loading da collection"""
-        if self._collection is None:
-            self._collection = self.chroma_client.get_or_create_collection(
-                name=settings.chroma_collection_name,
-                metadata={"hnsw:space": "cosine"}
-            )
-        return self._collection
+class IngestionServicePinecone:
+    """Serviço para processamento e ingestão de PDFs no Pinecone"""
     
     def extract_text_from_pdf(self, pdf_bytes: bytes) -> List[Tuple[int, str]]:
         """
@@ -140,7 +108,7 @@ class IngestionService:
         metadata: Dict = None
     ) -> Tuple[str, int]:
         """
-        Processa e indexa um PDF do GCS
+        Processa e indexa um PDF do GCS no Pinecone
         
         Args:
             gcs_path: Caminho do PDF no GCS
@@ -188,22 +156,24 @@ class IngestionService:
                         "chunk_index": i,
                         "gcs_path": gcs_path,
                         "upload_date": datetime.now().isoformat(),
+                        "text": chunk,  # Pinecone: texto vai no metadata
                         **(metadata or {})
                     }
                     chunk_metadatas.append(chunk_metadata)
             
-            # 5. Gerar embeddings
+            # 5. Gerar embeddings em batch
             logger.info(f"Gerando embeddings para {len(all_chunks)} chunks...")
             embeddings = await openai_client.create_embeddings_batch(all_chunks)
             
-            # 6. Upsert no ChromaDB
-            logger.info("Armazenando no ChromaDB...")
-            self.collection.upsert(
-                ids=chunk_ids,
-                embeddings=embeddings,
-                documents=all_chunks,
-                metadatas=chunk_metadatas
-            )
+            # 6. Preparar vetores para Pinecone
+            # Formato: [(id, embedding, metadata), ...]
+            vectors = []
+            for chunk_id, embedding, chunk_metadata in zip(chunk_ids, embeddings, chunk_metadatas):
+                vectors.append((chunk_id, embedding, chunk_metadata))
+            
+            # 7. Upsert no Pinecone
+            logger.info(f"Armazenando no Pinecone...")
+            pinecone_client.upsert_vectors(vectors)
             
             logger.info(f"Documento {filename} indexado com sucesso: {len(all_chunks)} chunks")
             return document_id, len(all_chunks)
@@ -212,24 +182,20 @@ class IngestionService:
             logger.error(f"Erro durante ingestão: {e}")
             raise
     
-    def get_collection_stats(self) -> Dict:
+    def get_index_stats(self) -> Dict:
         """
-        Retorna estatísticas da collection ChromaDB
+        Retorna estatísticas do Pinecone
         
         Returns:
             Dicionário com estatísticas
         """
         try:
-            count = self.collection.count()
-            return {
-                "total_chunks": count,
-                "collection_name": settings.chroma_collection_name
-            }
+            return pinecone_client.get_index_stats()
         except Exception as e:
             logger.error(f"Erro ao obter estatísticas: {e}")
-            return {"total_chunks": 0, "error": str(e)}
+            return {"total_vectors": 0, "error": str(e)}
 
 
 # Singleton instance
-ingestion_service = IngestionService()
+ingestion_service_pinecone = IngestionServicePinecone()
 

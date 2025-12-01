@@ -20,7 +20,11 @@ export const Login = ({ onLogin }: LoginProps) => {
     setIsLoading(true);
 
     // Credenciais fixas para demo
-    if (username === 'admin' && password === 'pyongyang#2025') {
+    // TODO: Mover para variáveis de ambiente em produção
+    const DEMO_USERNAME = 'admin';
+    const DEMO_PASSWORD = 'pyongyang#2025';
+    
+    if (username === DEMO_USERNAME && password === DEMO_PASSWORD) {
       setTimeout(() => {
         onLogin();
         setIsLoading(false);
@@ -149,7 +153,7 @@ export const Login = ({ onLogin }: LoginProps) => {
         {/* Footer */}
         <div className="text-center mt-8">
           <p className="text-sm text-gray-500">
-            AgroFinder v1.0 · Powered by OpenAI & ChromaDB
+            AgroFinder v1.0 · Powered by OpenAI & Pinecone
           </p>
         </div>
       </div>

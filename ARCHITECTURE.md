@@ -58,6 +58,7 @@ Quando um LLM precisa buscar informações, **contexto semântico** é crucial. 
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                   BACKEND (FastAPI + Python)                    │
+│                   [Cloud Run - Serverless]                      │
 │  ┌─────────────────────────────────────────────────────┐        │
 │  │                  API ENDPOINTS                      │        │
 │  │  POST /api/search         - Busca semântica        │        │
@@ -65,38 +66,38 @@ Quando um LLM precisa buscar informações, **contexto semântico** é crucial. 
 │  │  POST /api/ingest         - Indexação manual       │        │
 │  │  GET  /api/document/{path} - Serve PDFs            │        │
 │  │  GET  /api/health         - Health check           │        │
+│  │  GET  /api/stats          - Estatísticas           │        │
 │  └─────────────────────────────────────────────────────┘        │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────┐        │
 │  │                   SERVICES                          │        │
-│  │  ├─ search_service      (busca vetorial)           │        │
-│  │  ├─ ingestion_service   (processamento PDF)        │        │
-│  │  ├─ openai_client       (embeddings)               │        │
-│  │  └─ gcs_client          (storage)                  │        │
+│  │  ├─ search_pinecone_service   (busca vetorial)     │        │
+│  │  ├─ ingestion_pinecone_service (processamento PDF) │        │
+│  │  ├─ pinecone_client       (vector database)        │        │
+│  │  ├─ openai_client         (embeddings)             │        │
+│  │  └─ gcs_client            (storage)                │        │
 │  └─────────────────────────────────────────────────────┘        │
 └────────────┬──────────────────────┬─────────────────────────────┘
              │                      │
              │                      │
-    ┌────────▼──────┐      ┌────────▼──────────┐
-    │   ChromaDB    │      │  Google Cloud     │
-    │  (Persistent) │      │    Storage        │
-    │               │      │                   │
-    │ ┌───────────┐ │      │ ┌───────────────┐ │
-    │ │ Vectors   │ │      │ │  anuncios/    │ │
-    │ │ 1536-dim  │ │      │ │  organico/    │ │
-    │ └───────────┘ │      │ │  pdfs/        │ │
-    │ ┌───────────┐ │      │ └───────────────┘ │
-    │ │ Metadata  │ │      └───────────────────┘
-    │ │ JSON      │ │
-    │ └───────────┘ │              │
-    └───────────────┘              │
-             │                     │
-             │                     │
-    ┌────────▼─────────────────────▼──────┐
-    │        OpenAI Embeddings API        │
-    │     text-embedding-3-small          │
-    │        (1536 dimensions)             │
-    └─────────────────────────────────────┘
+    ┌────────▼──────────┐  ┌────────▼──────────┐
+    │   Pinecone        │  │  Google Cloud     │
+    │   Vector DB       │  │  Storage (GCS)    │
+    │   [Managed]       │  │                   │
+    │                   │  │ ┌───────────────┐ │
+    │ • Index: agrofinder│ │ │  anuncios/    │ │
+    │ • 3,448 vectors   │  │ │  organico/    │ │
+    │ • 1536-dim        │  │ │  125 PDFs     │ │
+    │ • Cosine metric   │  │ └───────────────┘ │
+    │ • us-east-1 (AWS) │  └───────────────────┘
+    └───────────────────┘           │
+             │                      │
+             │                      │
+    ┌────────▼──────────────────────▼──────┐
+    │        OpenAI Embeddings API         │
+    │     text-embedding-3-small           │
+    │        (1536 dimensions)              │
+    └──────────────────────────────────────┘
 ```
 
 ### Camadas da Arquitetura
@@ -114,12 +115,13 @@ Quando um LLM precisa buscar informações, **contexto semântico** é crucial. 
 
 3. **Camada de Processamento**
    - PDFPlumber para extração de texto
-   - OpenAI para embeddings
-   - ChromaDB para armazenamento vetorial
+   - OpenAI para embeddings (text-embedding-3-small)
+   - Pinecone para armazenamento vetorial (managed)
 
 4. **Camada de Armazenamento**
-   - Google Cloud Storage (PDFs)
-   - ChromaDB SQLite (vetores + metadata)
+   - Google Cloud Storage (PDFs originais)
+   - Pinecone (vetores + metadata) - Serverless Vector DB
+   - Stateless deployment (Cloud Run compatible)
 
 ---
 

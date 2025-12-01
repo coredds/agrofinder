@@ -17,9 +17,10 @@ class Settings(BaseSettings):
     gcs_bucket_name: str
     gcs_project_id: Optional[str] = None  # Opcional se usar ADC
     
-    # ChromaDB
-    chroma_db_path: str = "./chroma_db"
-    chroma_collection_name: str = "agro_docs"
+    # Pinecone
+    pinecone_api_key: str
+    pinecone_index_name: str = "agrofinder"
+    pinecone_environment: str = "us-east-1"  # Free tier (AWS)
     
     # Application
     environment: str = "development"
@@ -27,8 +28,8 @@ class Settings(BaseSettings):
     
     # Search
     top_k_results: int = 10
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
     
     class Config:
         env_file = ".env"

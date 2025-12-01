@@ -35,16 +35,13 @@ COPY backend/ ./backend/
 # Copiar frontend build do stage anterior
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Criar diretório para ChromaDB
-RUN mkdir -p /app/chroma_db
-
-# Expor porta
-EXPOSE 8000
+# Expor porta (Cloud Run usa $PORT)
+EXPOSE 8080
 
 # Variáveis de ambiente
 ENV PYTHONUNBUFFERED=1
-ENV CHROMA_DB_PATH=/app/chroma_db
+ENV PORT=8080
 
-# Comando de inicialização
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando de inicialização (Cloud Run define $PORT dinamicamente)
+CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080}
 

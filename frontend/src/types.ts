@@ -36,8 +36,8 @@ export interface SearchResponse {
 export interface HealthResponse {
   status: string;
   environment: string;
-  chromadb_status: string;
-  total_documents: number;
+  vector_db: string;
+  total_vectors: number;
   timestamp: string;
 }
 
